@@ -18,7 +18,7 @@ from skimage.draw import polygon
 
 
 class CustomDataset(BddDataset):
-    def __init__(self, params, is_train, inputsize=[640, 384], transform=None, seg_mode=MULTICLASS_MODE, debug=False):
+    def __init__(self, params, is_train, inputsize=[640, 384], transform=None, seg_mode=MULTICLASS_MODE, debug=False, split=None):
         """
         initial all the characteristic
 

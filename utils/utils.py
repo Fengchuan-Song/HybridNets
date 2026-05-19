@@ -177,10 +177,21 @@ def postprocess(x, anchors, regression, classification, regressBoxes, clipBoxes,
     return out
 
 def get_last_weights(weights_path):
-    weights_path = glob(weights_path + f'/*.pth')
-    weights_path = sorted(weights_path,
-                          key=lambda x: int(x.rsplit('_')[-1].rsplit('.')[0]),
-                          reverse=True)[0]
+    latest = os.path.join(weights_path, 'latest.pth')
+    if os.path.exists(latest):
+        print(f'using weights {latest}')
+        return latest
+
+    weight_files = glob(weights_path + f'/*.pth')
+    if not weight_files:
+        raise FileNotFoundError(f'No .pth weights found in {weights_path}')
+
+    def sort_key(path):
+        name = os.path.basename(path)
+        digits = ''.join(ch if ch.isdigit() else ' ' for ch in name).split()
+        return int(digits[-1]) if digits else int(os.path.getmtime(path))
+
+    weights_path = sorted(weight_files, key=sort_key, reverse=True)[0]
     print(f'using weights {weights_path}')
     return weights_path
 

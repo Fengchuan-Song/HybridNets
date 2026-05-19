@@ -1,0 +1,46 @@
+# WaterScenes configuration.
+mean: [0.485, 0.456, 0.406]
+std: [0.229, 0.224, 0.225]
+
+anchors_scales: '[2**0, 2**0.70, 2**1.32]'
+anchors_ratios: '[(0.62, 1.58), (1.0, 1.0), (1.58, 0.62)]'
+
+obj_list: ['ship']
+obj_combine: []
+traffic_light_color: false
+
+seg_list: ['drivable', 'waterline']
+seg_multilabel: true
+
+dataset:
+  type: waterscenes
+  dataroot: /root/autodl-tmp/WaterScenes
+  image_root: /root/autodl-tmp/WaterScenes/images
+  label_root: /root/autodl-tmp/WaterScenes/labels
+  semantic_root: /root/autodl-tmp/WaterScenes/semantic/SegmentationClass
+  waterline_root: /root/autodl-tmp/WaterScenes/waterline/SegmentationClass
+  train_set: /root/autodl-tmp/WaterScenes/MIPC_shipOnly/2007_train.txt
+  val_set: /root/autodl-tmp/WaterScenes/MIPC_shipOnly/2007_val.txt
+  test_set: /root/autodl-tmp/WaterScenes/MIPC_shipOnly/2007_test.txt
+  org_img_size:
+  - 1080
+  - 1920
+  fliplr: 0.5
+  flipud: 0.0
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+  rot_factor: 10
+  scale_factor: 0.25
+  shear: 0.0
+  translate: 0.1
+  mosaic: 0.0
+  mixup: 0.0
+
+model:
+  image_size:
+  - 320
+  - 320
+
+need_autoanchor: false
+pin_memory: true

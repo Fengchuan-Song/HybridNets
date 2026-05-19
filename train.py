@@ -14,8 +14,7 @@ from val import val
 from backbone import HybridNetsBackbone
 from utils.utils import get_last_weights, init_weights, boolean_string, \
     save_checkpoint, DataLoaderX, Params
-from hybridnets.dataset import BddDataset
-from hybridnets.custom_dataset import CustomDataset
+from hybridnets.dataset_factory import get_dataset_class
 from hybridnets.autoanchor import run_anchor
 from hybridnets.model import ModelWithLoss
 from utils.constants import *
@@ -30,7 +29,7 @@ def get_args():
                                                             'https://github.com/rwightman/pytorch-image-models')
     parser.add_argument('-c', '--compound_coef', type=int, default=3, help='Coefficient of efficientnet backbone')
     parser.add_argument('-n', '--num_workers', type=int, default=8, help='Num_workers of dataloader')
-    parser.add_argument('-b', '--batch_size', type=int, default=12, help='Number of images per batch among all devices')
+    parser.add_argument('-b', '--batch_size', type=int, default=16, help='Number of images per batch among all devices')
     parser.add_argument('--freeze_backbone', type=boolean_string, default=False,
                         help='Freeze encoder and neck (effnet and bifpn)')
     parser.add_argument('--freeze_det', type=boolean_string, default=False,
@@ -41,7 +40,7 @@ def get_args():
     parser.add_argument('--optim', type=str, default='adamw', help='Select optimizer for training, '
                                                                    'suggest using \'adamw\' until the'
                                                                    ' very final stage then switch to \'sgd\'')
-    parser.add_argument('--num_epochs', type=int, default=500)
+    parser.add_argument('--num_epochs', type=int, default=100)
     parser.add_argument('--val_interval', type=int, default=1, help='Number of epoches between valing phases')
     parser.add_argument('--save_interval', type=int, default=500, help='Number of steps between saving')
     parser.add_argument('--es_min_delta', type=float, default=0.0,
@@ -54,7 +53,7 @@ def get_args():
     parser.add_argument('-w', '--load_weights', type=str, default=None,
                         help='Whether to load weights from a checkpoint, set None to initialize,'
                              'set \'last\' to load last checkpoint')
-    parser.add_argument('--saved_path', type=str, default='checkpoints/')
+    parser.add_argument('--saved_path', type=str, default='/data/hybridnets/weights/')
     parser.add_argument('--debug', type=boolean_string, default=False,
                         help='Whether visualize the predicted boxes of training, '
                              'the output images will be in test/, '
@@ -67,37 +66,65 @@ def get_args():
                         help='Whether to plot confusion matrix when valing')
     parser.add_argument('--num_gpus', type=int, default=1,
                         help='Number of GPUs to be used (0 to use CPU)')
+    parser.add_argument('--gpu_ids', type=str, default='0',
+                        help='CUDA_VISIBLE_DEVICES value when using GPU')
     parser.add_argument('--conf_thres', type=float, default=0.001,
                         help='Confidence threshold in NMS')
     parser.add_argument('--iou_thres', type=float, default=0.6,
                         help='IoU threshold in NMS')
     parser.add_argument('--amp', type=boolean_string, default=False,
                         help='Automatic Mixed Precision training')
+    parser.add_argument('--wandb', type=boolean_string, default=True,
+                        help='Log scalar metrics to Weights & Biases if wandb is installed')
+    parser.add_argument('--wandb_project', type=str, default='Achelous++')
 
     args = parser.parse_args()
     return args
+
+
+def init_wandb(opt, params):
+    if not opt.wandb:
+        return None
+    try:
+        import wandb
+        return wandb.init(
+            project=opt.wandb_project,
+            name=f'{opt.project}-{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}',
+            config={**vars(opt), 'project_params': params.params},
+        )
+    except Exception as e:
+        print(f'[Warning] wandb disabled: {e}')
+        return None
 
 def train(opt):
     torch.backends.cudnn.benchmark = True
     print("\nCUDNN VERSION: {}\n".format(torch.backends.cudnn.version()))
     params = Params(f'projects/{opt.project}.yml')
+    writer = None
+    wandb_run = None
 
     if opt.num_gpus == 0:
         os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+    else:
+        os.environ['CUDA_VISIBLE_DEVICES'] = opt.gpu_ids
 
     if torch.cuda.is_available():
         torch.cuda.manual_seed(42)
     else:
         torch.manual_seed(42)
 
-    opt.saved_path = opt.saved_path + f'/{opt.project}/'
+    if (params.dataset.get('type') or '').lower() in {'waterscenes', 'water_scenes'}:
+        opt.saved_path = opt.saved_path.rstrip('/\\') + '/'
+    else:
+        opt.saved_path = opt.saved_path + f'/{opt.project}/'
     opt.log_path = opt.log_path + f'/{opt.project}/tensorboard/'
     os.makedirs(opt.log_path, exist_ok=True)
     os.makedirs(opt.saved_path, exist_ok=True)
 
     seg_mode = MULTILABEL_MODE if params.seg_multilabel else MULTICLASS_MODE if len(params.seg_list) > 1 else BINARY_MODE
 
-    train_dataset = BddDataset(
+    DatasetClass = get_dataset_class(params)
+    train_dataset = DatasetClass(
         params=params,
         is_train=True,
         inputsize=params.model['image_size'],
@@ -117,12 +144,13 @@ def train(opt):
         shuffle=False,
         num_workers=opt.num_workers,
         pin_memory=params.pin_memory,
-        collate_fn=BddDataset.collate_fn
+        collate_fn=DatasetClass.collate_fn
     )
 
-    valid_dataset = BddDataset(
+    valid_dataset = DatasetClass(
         params=params,
         is_train=False,
+        split='val_set',
         inputsize=params.model['image_size'],
         transform=transforms.Compose([
             transforms.ToTensor(),
@@ -140,7 +168,7 @@ def train(opt):
         shuffle=False,
         num_workers=opt.num_workers,
         pin_memory=params.pin_memory,
-        collate_fn=BddDataset.collate_fn
+        collate_fn=DatasetClass.collate_fn
     )
 
     if params.need_autoanchor:
@@ -196,6 +224,7 @@ def train(opt):
     #summary(model, (1, 3, 384, 640), device='cpu')
 
     writer = SummaryWriter(opt.log_path + f'/{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}/')
+    wandb_run = init_wandb(opt, params)
 
     # wrap the model with loss function, to reduce the memory usage on gpu0 and speedup
     model = ModelWithLoss(model, debug=opt.debug)
@@ -303,11 +332,31 @@ def train(opt):
             if epoch % opt.val_interval == 0:
                 best_fitness, best_loss, best_epoch = val(model, val_generator, params, opt, seg_mode, is_training=True,
                                                           optimizer=optimizer, scaler=scaler, writer=writer, epoch=epoch, step=step, 
-                                                          best_fitness=best_fitness, best_loss=best_loss, best_epoch=best_epoch)
+                                                          best_fitness=best_fitness, best_loss=best_loss, best_epoch=best_epoch,
+                                                          wandb_run=wandb_run)
+            ckpt = {'epoch': epoch,
+                    'step': step,
+                    'best_fitness': best_fitness,
+                    'model': model.model.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'scaler': scaler.state_dict()}
+            save_checkpoint(ckpt, opt.saved_path, f'epoch-{epoch}.pth')
+            save_checkpoint(ckpt, opt.saved_path, 'latest.pth')
     except KeyboardInterrupt:
         save_checkpoint(model, opt.saved_path, f'hybridnets-d{opt.compound_coef}_{epoch}_{step}.pth')
     finally:
-        writer.close()
+        if all(name in locals() for name in ('model', 'optimizer', 'scaler')):
+            final_ckpt = {'epoch': epoch,
+                          'step': step,
+                          'best_fitness': best_fitness,
+                          'model': model.model.state_dict(),
+                          'optimizer': optimizer.state_dict(),
+                          'scaler': scaler.state_dict()}
+            save_checkpoint(final_ckpt, opt.saved_path, 'final.pth')
+        if wandb_run is not None:
+            wandb_run.finish()
+        if writer is not None:
+            writer.close()
 
 
 if __name__ == '__main__':

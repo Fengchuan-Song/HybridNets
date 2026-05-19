@@ -8,8 +8,7 @@ from utils import smp_metrics
 from utils.utils import ConfusionMatrix, postprocess, scale_coords, process_batch, ap_per_class, fitness, \
     save_checkpoint, DataLoaderX, BBoxTransform, ClipBoxes, boolean_string, Params
 from backbone import HybridNetsBackbone
-from hybridnets.dataset import BddDataset
-from hybridnets.custom_dataset import CustomDataset
+from hybridnets.dataset_factory import get_dataset_class
 from torchvision import transforms
 import torch.nn.functional as F
 from hybridnets.model import ModelWithLoss
@@ -28,6 +27,7 @@ def val(model, val_generator, params, opt, seg_mode, is_training, **kwargs):
     best_fitness = kwargs.get('best_fitness', 0)
     best_loss = kwargs.get('best_loss', 0)
     best_epoch = kwargs.get('best_epoch', 0)
+    wandb_run = kwargs.get('wandb_run', None)
 
     loss_regression_ls = []
     loss_classification_ls = []
@@ -45,7 +45,7 @@ def val(model, val_generator, params, opt, seg_mode, is_training, **kwargs):
     for i in range(len(params.seg_list)):
             s_seg += '%-33s' % params.seg_list[i]
             s += ('%-11s' * 3) % ('mIoU', 'IoU', 'Acc')
-    p, r, f1, mp, mr, map50, map = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    p, r, f1, mp, mr, map50, map, map75, mar = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     iou_ls = [[] for _ in range(ncs)]
     acc_ls = [[] for _ in range(ncs)]
     regressBoxes = BBoxTransform()
@@ -211,9 +211,10 @@ def val(model, val_generator, params, opt, seg_mode, is_training, **kwargs):
         # Compute metrics
         if len(stats) and stats[0].any():
             p, r, f1, ap, ap_class = ap_per_class(*stats, plot=opt.plots, save_dir=save_dir, names=names)
-            ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
-            mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
+            ap50, ap75, ap_mean = ap[:, 0], ap[:, 5], ap.mean(1)  # AP@0.5, AP@0.75, AP@0.5:0.95
+            mp, mr, map50, map75, map = p.mean(), r.mean(), ap50.mean(), ap75.mean(), ap_mean.mean()
             nt = np.bincount(stats[3].astype(np.int64), minlength=1)  # number of targets per class
+            mar = stats[0].sum(0).mean() / max(nt.sum(), 1)
         else:
             nt = torch.zeros(1)
 
@@ -230,7 +231,7 @@ def val(model, val_generator, params, opt, seg_mode, is_training, **kwargs):
         if opt.verbose and nc > 1 and len(stats):
             pf = '%-15s' + '%-11i' * 2 + '%-11.3g' * 4
             for i, c in enumerate(ap_class):
-                print(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
+                print(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap_mean[i]))
 
         # Plots
         if opt.plots:
@@ -252,6 +253,16 @@ def val(model, val_generator, params, opt, seg_mode, is_training, **kwargs):
                     'scaler': scaler.state_dict()}
             print("Saving checkpoint with best fitness", fi[0])
             save_checkpoint(ckpt, opt.saved_path, f'hybridnets-d{opt.compound_coef}_{epoch}_{step}_best.pth')
+        metrics = {
+            'mAP50(eval)': float(map50),
+            'mAP50-95(eval)': float(map),
+            'mAP75(eval)': float(map75),
+            'mAR50-95(eval)': float(mar),
+            'mIoU se(eval)': float(miou_ls[0]) if len(miou_ls) > 0 else 0.0,
+            'mIoU wl(eval)': float(miou_ls[1]) if len(miou_ls) > 1 else 0.0,
+        }
+        if wandb_run is not None:
+            wandb_run.log(metrics, step=step)
     else:
         # if not calculating map, save by best loss
         if is_training and loss + opt.es_min_delta < best_loss:
@@ -266,7 +277,11 @@ def val(model, val_generator, params, opt, seg_mode, is_training, **kwargs):
         exit(0)
 
     model.train()
-    return (best_fitness, best_loss, best_epoch) if is_training else 0
+    if opt.cal_map:
+        val.last_metrics = metrics
+    else:
+        val.last_metrics = {'loss(eval)': float(loss)}
+    return (best_fitness, best_loss, best_epoch) if is_training else val.last_metrics
 
 
 if __name__ == "__main__":
@@ -278,7 +293,7 @@ if __name__ == "__main__":
     ap.add_argument('-c', '--compound_coef', type=int, default=3, help='Coefficients of efficientnet backbone')
     ap.add_argument('-w', '--weights', type=str, default='weights/hybridnets.pth', help='/path/to/weights')
     ap.add_argument('-n', '--num_workers', type=int, default=12, help='Num_workers of dataloader')
-    ap.add_argument('--batch_size', type=int, default=12, help='The number of images per batch among all devices')
+    ap.add_argument('--batch_size', type=int, default=16, help='The number of images per batch among all devices')
     ap.add_argument('-v', '--verbose', type=boolean_string, default=True,
                     help='Whether to print results per class when valing')
     ap.add_argument('--cal_map', type=boolean_string, default=True,
@@ -287,11 +302,17 @@ if __name__ == "__main__":
                     help='Whether to plot confusion matrix when valing')
     ap.add_argument('--num_gpus', type=int, default=1,
                     help='Number of GPUs to be used (0 to use CPU)')
+    ap.add_argument('--gpu_ids', type=str, default='0',
+                    help='CUDA_VISIBLE_DEVICES value when using GPU')
     ap.add_argument('--conf_thres', type=float, default=0.001,
                     help='Confidence threshold in NMS')
     ap.add_argument('--iou_thres', type=float, default=0.6,
                     help='IoU threshold in NMS')
     args = ap.parse_args()
+    if args.num_gpus == 0:
+        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+    else:
+        os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_ids
 
     compound_coef = args.compound_coef
     project_name = args.project
@@ -301,9 +322,11 @@ if __name__ == "__main__":
     obj_list = params.obj_list
     seg_mode = MULTILABEL_MODE if params.seg_multilabel else MULTICLASS_MODE if len(params.seg_list) > 1 else BINARY_MODE
 
-    valid_dataset = BddDataset(
+    DatasetClass = get_dataset_class(params)
+    valid_dataset = DatasetClass(
         params=params,
         is_train=False,
+        split='test_set',
         inputsize=params.model['image_size'],
         transform=transforms.Compose([
             transforms.ToTensor(),
@@ -320,7 +343,7 @@ if __name__ == "__main__":
         shuffle=False,
         num_workers=args.num_workers,
         pin_memory=params.pin_memory,
-        collate_fn=BddDataset.collate_fn
+        collate_fn=DatasetClass.collate_fn
     )
 
     model = HybridNetsBackbone(compound_coef=compound_coef, num_classes=len(params.obj_list),
