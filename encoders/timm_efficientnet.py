@@ -4,13 +4,30 @@ import torch
 import torch.nn as nn
 
 from timm.models.efficientnet import EfficientNet
-from timm.models.efficientnet import decode_arch_def, round_channels, default_cfgs
+from timm.models.efficientnet import decode_arch_def, round_channels, default_cfgs as timm_default_cfgs
 try:
     from timm.models.layers.activations import Swish
 except ModuleNotFoundError:
-    from timm.layers import Swish
+    try:
+        from timm.layers import Swish
+    except ImportError:
+        from torch.nn import SiLU as Swish
 
 from ._base import EncoderMixin
+
+
+class SafeDefaultCfgs:
+    def __init__(self, cfgs):
+        self.cfgs = cfgs
+
+    def __getitem__(self, key):
+        try:
+            return self.cfgs[key]
+        except (KeyError, IndexError, TypeError):
+            return {}
+
+
+default_cfgs = SafeDefaultCfgs(timm_default_cfgs)
 
 
 def get_efficientnet_kwargs(channel_multiplier=1.0, depth_multiplier=1.0, drop_rate=0.2):
@@ -148,17 +165,28 @@ def cfg_get(settings, key, default=None):
     if isinstance(settings, dict):
         return settings.get(key, default)
 
-    default_cfg = getattr(settings, "default", None)
-    if isinstance(default_cfg, dict):
-        return default_cfg.get(key, default)
+    try:
+        default_cfg = getattr(settings, "default", None)
+    except Exception:
+        default_cfg = None
+    value = cfg_get(default_cfg, key, None) if default_cfg is not None else None
+    if value is not None:
+        return value
 
-    cfgs = getattr(settings, "cfgs", None)
+    try:
+        cfgs = getattr(settings, "cfgs", None)
+    except Exception:
+        cfgs = None
     if isinstance(cfgs, dict) and cfgs:
         for cfg in cfgs.values():
-            if isinstance(cfg, dict) and key in cfg:
-                return cfg[key]
+            value = cfg_get(cfg, key, None)
+            if value is not None:
+                return value
 
-    return getattr(settings, key, default)
+    try:
+        return getattr(settings, key, default)
+    except Exception:
+        return default
 
 
 def prepare_settings(settings):

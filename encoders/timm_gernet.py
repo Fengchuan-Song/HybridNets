@@ -1,4 +1,7 @@
-from timm.models import ByoModelCfg, ByoBlockCfg, ByobNet
+try:
+    from timm.models import ByoModelCfg, ByoBlockCfg, ByobNet
+except ImportError:
+    from timm.models.byobnet import ByoModelCfg, ByoBlockCfg, ByobNet
 
 from ._base import EncoderMixin
 import torch.nn as nn
