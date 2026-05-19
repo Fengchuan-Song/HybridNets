@@ -12,7 +12,10 @@ import json
 import albumentations as A
 from collections import OrderedDict
 from utils.constants import *
-import torchshow
+try:
+    import torchshow
+except ModuleNotFoundError:
+    torchshow = None
 
 
 class BddDataset(Dataset):

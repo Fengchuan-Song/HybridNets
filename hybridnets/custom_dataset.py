@@ -11,7 +11,10 @@ import json
 import albumentations as A
 from collections import OrderedDict
 from utils.constants import *
-import torchshow
+try:
+    import torchshow
+except ModuleNotFoundError:
+    torchshow = None
 from hybridnets.dataset import BddDataset
 import json
 from skimage.draw import polygon
