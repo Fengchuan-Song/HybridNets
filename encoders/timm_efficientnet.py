@@ -144,11 +144,28 @@ class EfficientNetLiteEncoder(EfficientNetBaseEncoder):
         super().__init__(stage_idxs, out_channels, depth, **kwargs)
 
 
+def cfg_get(settings, key, default=None):
+    if isinstance(settings, dict):
+        return settings.get(key, default)
+
+    default_cfg = getattr(settings, "default", None)
+    if isinstance(default_cfg, dict):
+        return default_cfg.get(key, default)
+
+    cfgs = getattr(settings, "cfgs", None)
+    if isinstance(cfgs, dict) and cfgs:
+        for cfg in cfgs.values():
+            if isinstance(cfg, dict) and key in cfg:
+                return cfg[key]
+
+    return getattr(settings, key, default)
+
+
 def prepare_settings(settings):
     return {
-        "mean": settings["mean"],
-        "std": settings["std"],
-        "url": settings["url"],
+        "mean": cfg_get(settings, "mean", (0.485, 0.456, 0.406)),
+        "std": cfg_get(settings, "std", (0.229, 0.224, 0.225)),
+        "url": cfg_get(settings, "url", ""),
         "input_range": (0, 1),
         "input_space": "RGB",
     }
