@@ -92,7 +92,7 @@ def init_wandb(opt, params):
         import wandb
         return wandb.init(
             project=opt.wandb_project,
-            name=f'{opt.project}-{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}',
+            name='HybridNets',
             config={**vars(opt), 'project_params': params.params},
         )
     except Exception as e:
