@@ -346,10 +346,12 @@ if __name__ == "__main__":
         collate_fn=DatasetClass.collate_fn
     )
 
+    pretrained_backbone = True if params.pretrained_backbone is None else params.pretrained_backbone
     model = HybridNetsBackbone(compound_coef=compound_coef, num_classes=len(params.obj_list),
                                ratios=eval(params.anchors_ratios), scales=eval(params.anchors_scales),
                                seg_classes=len(params.seg_list), backbone_name=args.backbone,
-                               seg_mode=seg_mode)
+                               seg_mode=seg_mode,
+                               pretrained_backbone=pretrained_backbone)
     
     try:
         model.load_state_dict(torch.load(weights_path))

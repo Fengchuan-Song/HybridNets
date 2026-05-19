@@ -177,10 +177,12 @@ def train(opt):
     if params.need_autoanchor:
         params.anchors_scales, params.anchors_ratios = run_anchor(None, train_dataset)
 
+    pretrained_backbone = True if params.pretrained_backbone is None else params.pretrained_backbone
     model = HybridNetsBackbone(num_classes=len(params.obj_list), compound_coef=opt.compound_coef,
                                ratios=eval(params.anchors_ratios), scales=eval(params.anchors_scales),
                                seg_classes=len(params.seg_list), backbone_name=opt.backbone,
-                               seg_mode=seg_mode)
+                               seg_mode=seg_mode,
+                               pretrained_backbone=pretrained_backbone)
 
     # load last weights
     ckpt = {}

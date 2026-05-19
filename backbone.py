@@ -10,7 +10,8 @@ from encoders import get_encoder
 from utils.constants import *
 
 class HybridNetsBackbone(nn.Module):
-    def __init__(self, num_classes=80, compound_coef=0, seg_classes=1, backbone_name=None, seg_mode=MULTICLASS_MODE, onnx_export=False, **kwargs):
+    def __init__(self, num_classes=80, compound_coef=0, seg_classes=1, backbone_name=None, seg_mode=MULTICLASS_MODE,
+                 onnx_export=False, pretrained_backbone=True, **kwargs):
         super(HybridNetsBackbone, self).__init__()
         self.compound_coef = compound_coef
 
@@ -77,14 +78,14 @@ class HybridNetsBackbone(nn.Module):
                                      onnx_export=onnx_export)
 
         if backbone_name:
-            self.encoder = timm.create_model(backbone_name, pretrained=True, features_only=True, out_indices=(2,3,4))  # P3,P4,P5
+            self.encoder = timm.create_model(backbone_name, pretrained=pretrained_backbone, features_only=True, out_indices=(2,3,4))  # P3,P4,P5
         else:
             # EfficientNet_Pytorch
             self.encoder = get_encoder(
                 'efficientnet-b' + str(self.backbone_compound_coef[compound_coef]),
                 in_channels=3,
                 depth=5,
-                weights='imagenet',
+                weights='imagenet' if pretrained_backbone else None,
             )
 
         self.anchors = Anchors(anchor_scale=self.anchor_scale[compound_coef],

@@ -11,6 +11,7 @@ traffic_light_color: false
 
 seg_list: ['drivable', 'waterline']
 seg_multilabel: true
+pretrained_backbone: false
 
 dataset:
   type: waterscenes
