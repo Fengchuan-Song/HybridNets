@@ -56,7 +56,7 @@ def get_args():
     parser.add_argument('-w', '--load_weights', type=str, default=None,
                         help='Whether to load weights from a checkpoint, set None to initialize,'
                              'set \'last\' to load last checkpoint')
-    parser.add_argument('--saved_path', type=str, default='/data/hybridnets/weights/')
+    parser.add_argument('--saved_path', type=str, default='/root/autodl-tmp/hybridnets/weights/')
     parser.add_argument('--debug', type=boolean_string, default=False,
                         help='Whether visualize the predicted boxes of training, '
                              'the output images will be in test/, '
@@ -322,10 +322,6 @@ def train(opt):
                     writer.add_scalar('learning_rate', current_lr, step)
 
                     step += 1
-
-                    if step % opt.save_interval == 0 and step > 0:
-                        save_checkpoint(model, opt.saved_path, f'hybridnets-d{opt.compound_coef}_{epoch}_{step}.pth')
-                        print('checkpoint...')
 
                 except Exception as e:
                     print('[Error]', traceback.format_exc())
