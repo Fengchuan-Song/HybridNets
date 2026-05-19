@@ -210,6 +210,10 @@ class BiFPN(nn.Module):
 
         return outs
 
+    @staticmethod
+    def _upsample_like(x, target):
+        return F.interpolate(x, size=target.shape[-2:], mode='nearest')
+
     def _forward_fast_attention(self, inputs):
         if self.first_time:
             p3, p4, p5 = inputs
@@ -231,24 +235,24 @@ class BiFPN(nn.Module):
         p6_w1 = self.p6_w1_relu(self.p6_w1)
         weight = p6_w1 / (torch.sum(p6_w1, dim=0) + self.epsilon)
         # Connections for P6_0 and P7_0 to P6_1 respectively
-        p6_up = self.conv6_up(self.swish(weight[0] * p6_in + weight[1] * self.p6_upsample(p7_in)))
+        p6_up = self.conv6_up(self.swish(weight[0] * p6_in + weight[1] * self._upsample_like(p7_in, p6_in)))
         # Weights for P5_0 and P6_1 to P5_1
         p5_w1 = self.p5_w1_relu(self.p5_w1)
         weight = p5_w1 / (torch.sum(p5_w1, dim=0) + self.epsilon)
         # Connections for P5_0 and P6_1 to P5_1 respectively
-        p5_up = self.conv5_up(self.swish(weight[0] * p5_in + weight[1] * self.p5_upsample(p6_up)))
+        p5_up = self.conv5_up(self.swish(weight[0] * p5_in + weight[1] * self._upsample_like(p6_up, p5_in)))
 
         # Weights for P4_0 and P5_1 to P4_1
         p4_w1 = self.p4_w1_relu(self.p4_w1)
         weight = p4_w1 / (torch.sum(p4_w1, dim=0) + self.epsilon)
         # Connections for P4_0 and P5_1 to P4_1 respectively
-        p4_up = self.conv4_up(self.swish(weight[0] * p4_in + weight[1] * self.p4_upsample(p5_up)))
+        p4_up = self.conv4_up(self.swish(weight[0] * p4_in + weight[1] * self._upsample_like(p5_up, p4_in)))
 
         # Weights for P3_0 and P4_1 to P3_2
         p3_w1 = self.p3_w1_relu(self.p3_w1)
         weight = p3_w1 / (torch.sum(p3_w1, dim=0) + self.epsilon)
         # Connections for P3_0 and P4_1 to P3_2 respectively
-        p3_out = self.conv3_up(self.swish(weight[0] * p3_in + weight[1] * self.p3_upsample(p4_up)))
+        p3_out = self.conv3_up(self.swish(weight[0] * p3_in + weight[1] * self._upsample_like(p4_up, p3_in)))
 
         if self.first_time:
             p4_in = self.p4_down_channel_2(p4)
@@ -308,24 +312,24 @@ class BiFPN(nn.Module):
             # P8_0 to P8_2
 
             # Connections for P7_0 and P8_0 to P7_1 respectively
-            p7_up = self.conv7_up(self.swish(p7_in + self.p7_upsample(p8_in)))
+            p7_up = self.conv7_up(self.swish(p7_in + self._upsample_like(p8_in, p7_in)))
 
             # Connections for P6_0 and P7_0 to P6_1 respectively
-            p6_up = self.conv6_up(self.swish(p6_in + self.p6_upsample(p7_up)))
+            p6_up = self.conv6_up(self.swish(p6_in + self._upsample_like(p7_up, p6_in)))
         else:
             # P7_0 to P7_2
 
             # Connections for P6_0 and P7_0 to P6_1 respectively
-            p6_up = self.conv6_up(self.swish(p6_in + self.p6_upsample(p7_in)))
+            p6_up = self.conv6_up(self.swish(p6_in + self._upsample_like(p7_in, p6_in)))
 
         # Connections for P5_0 and P6_1 to P5_1 respectively
-        p5_up = self.conv5_up(self.swish(p5_in + self.p5_upsample(p6_up)))
+        p5_up = self.conv5_up(self.swish(p5_in + self._upsample_like(p6_up, p5_in)))
 
         # Connections for P4_0 and P5_1 to P4_1 respectively
-        p4_up = self.conv4_up(self.swish(p4_in + self.p4_upsample(p5_up)))
+        p4_up = self.conv4_up(self.swish(p4_in + self._upsample_like(p5_up, p4_in)))
 
         # Connections for P3_0 and P4_1 to P3_2 respectively
-        p3_out = self.conv3_up(self.swish(p3_in + self.p3_upsample(p4_up)))
+        p3_out = self.conv3_up(self.swish(p3_in + self._upsample_like(p4_up, p3_in)))
 
         if self.first_time:
             p4_in = self.p4_down_channel_2(p4)
@@ -488,6 +492,12 @@ class BiFPNDecoder(nn.Module):
         p2 = self.seg_p2(p2)
             
         p3,p4,p5,p6,p7 = feature_pyramid
+        target_size = p2.shape[-2:]
+        p3 = F.interpolate(p3, size=target_size, mode="bilinear", align_corners=True)
+        p4 = F.interpolate(p4, size=target_size, mode="bilinear", align_corners=True)
+        p5 = F.interpolate(p5, size=target_size, mode="bilinear", align_corners=True)
+        p6 = F.interpolate(p6, size=target_size, mode="bilinear", align_corners=True)
+        p7 = F.interpolate(p7, size=target_size, mode="bilinear", align_corners=True)
 
         x = self.merge((p2,p3,p4,p5,p6,p7))
 
