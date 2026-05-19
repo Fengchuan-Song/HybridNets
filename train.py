@@ -19,7 +19,10 @@ from hybridnets.autoanchor import run_anchor
 from hybridnets.model import ModelWithLoss
 from utils.constants import *
 from collections import OrderedDict
-from torchinfo import summary
+try:
+    from torchinfo import summary
+except ModuleNotFoundError:
+    summary = None
 
 
 def get_args():
