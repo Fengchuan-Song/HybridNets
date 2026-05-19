@@ -5,7 +5,10 @@ import torch.nn as nn
 
 from timm.models.efficientnet import EfficientNet
 from timm.models.efficientnet import decode_arch_def, round_channels, default_cfgs
-from timm.models.layers.activations import Swish
+try:
+    from timm.models.layers.activations import Swish
+except ModuleNotFoundError:
+    from timm.layers import Swish
 
 from ._base import EncoderMixin
 
