@@ -304,6 +304,8 @@ if __name__ == "__main__":
                     help='Number of GPUs to be used (0 to use CPU)')
     ap.add_argument('--gpu_ids', type=str, default='0',
                     help='CUDA_VISIBLE_DEVICES value when using GPU')
+    ap.add_argument('--metrics_path', type=str, default='/root/autodl-tmp/hybridnets/results/test_metrics.txt',
+                    help='Path to save metrics when running standalone test/eval')
     ap.add_argument('--conf_thres', type=float, default=0.001,
                     help='Confidence threshold in NMS')
     ap.add_argument('--iou_thres', type=float, default=0.6,
@@ -363,4 +365,9 @@ if __name__ == "__main__":
     if args.num_gpus > 0:
         model.cuda()
 
-    val(model, val_generator, params, args, seg_mode, is_training=False)
+    metrics = val(model, val_generator, params, args, seg_mode, is_training=False)
+    os.makedirs(os.path.dirname(args.metrics_path), exist_ok=True)
+    with open(args.metrics_path, 'w') as f:
+        for key, value in metrics.items():
+            f.write(f'{key}: {float(value):.6f}\n')
+    print(f'Saved test metrics to {args.metrics_path}')
