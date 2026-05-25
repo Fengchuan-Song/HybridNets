@@ -1,4 +1,5 @@
 import argparse
+import pickle
 from pathlib import Path
 
 import cv2
@@ -47,7 +48,10 @@ def get_args():
 
 
 def load_state_dict(weights_path, device):
-    checkpoint = torch.load(weights_path, map_location=device)
+    try:
+        checkpoint = torch.load(weights_path, map_location=device)
+    except pickle.UnpicklingError:
+        checkpoint = torch.load(weights_path, map_location=device, weights_only=False)
     state_dict = checkpoint.get('model', checkpoint) if isinstance(checkpoint, dict) else checkpoint
     if any(key.startswith('module.') for key in state_dict):
         state_dict = {key.replace('module.', '', 1): value for key, value in state_dict.items()}
